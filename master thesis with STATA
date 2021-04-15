@@ -1,7 +1,7 @@
 import excel "C:\Users\Yang hee Shin\Desktop\wage data\extract_new.xlsx", sheet("Sheet1") firstrow
 
-global DATA_PATH "C:\Users\Student\Document\"		
-global WORK_PATH "C:\Users\Student\Document\"    
+global DATA_PATH "C:\Users\Student\Document\"		// directory of original data 
+global WORK_PATH "C:\Users\Student\Document\"    // working directory  
 
 drop if time > 43098
 *take samples by 4Q2017
@@ -94,6 +94,23 @@ est tab EHA_empty_e EHA_e EHA_high_e EHA_low_e EHA_fe EHA_fe_local EHA_fe_gics, 
 
 use wagegap.dta
 
+
+*Appendix-EVH with delisted firms and probability to be in the above WD group
+logit b_ratio i.delist, cluster(id)
+est store EHA_d_empty
+logit b_ratio i.delist acid_r capex_r PPE_r equity assets i.crises Employees cpi_q wage_gr, cluster(id)
+est store EHA_basic
+logit b_ratio acid_r capex_r PPE_r equity assets i.crises Employees cpi_q wage_gr if delist==1, cluster(id)
+est store EHA_d1
+logit b_ratio acid_r capex_r PPE_r equity assets i.crises Employees cpi_q wage_gr if delist==0, cluster(id)
+est store EHA_d0
+
+est tab EHA_d_empty EHA_basic EHA_d1 EHA_d0, star stats(N r2)
+est tab EHA_d_empty EHA_basic EHA_d1 EHA_d0, b se
+
+
+
+
 keep if staff > 0
 
 *exogeneous crises coding: 1= it-bubble, 2= financial crisis
@@ -158,18 +175,6 @@ graph save EHA_fe_g, replace
 est tab EHA_empty EHA EHA_high EHA_low EHA_fe_g, star stats(N r2)
 est tab EHA_empty EHA EHA_high EHA_low EHA_fe_g, b se
 
-*Appendix-EVH with delisted firms and probability to be in the above WD group
-logit b_ratio i.delist, cluster(id)
-est store EHA_d_empty
-logit b_ratio i.delist acid_r capex_r PPE_r equity assets i.crises Employees cpi_q wage_gr, cluster(id)
-est store EHA_basic
-logit b_ratio acid_r capex_r PPE_r equity assets i.crises Employees cpi_q wage_gr if delist==1, cluster(id)
-est store EHA_d1
-logit b_ratio acid_r capex_r PPE_r equity assets i.crises Employees cpi_q wage_gr if delist==0, cluster(id)
-est store EHA_d0
-
-est tab EHA_d_empty EHA_basic EHA_d1 EHA_d0, star stats(N r2)
-est tab EHA_d_empty EHA_basic EHA_d1 EHA_d0, b se
 
 
 *-----panel analyses------------------------------------------------------
@@ -206,7 +211,7 @@ replace r_d = 1 if r_d_aftrtax < 0
 replace avg_staff = ln((m_staff*1000000) /(Employees *1000))
 replace avg_exe = ln((m_exe_comp*1000) / exe_nr)
 bys id (time) : replace ratio = avg_exe - avg_staff
-*for smoothing effects
+*for smomthing effects
 
 * differencing in natural logarithm and in ratios
 foreach x in ln_assets ln_equity ln_cash ln_debt_current ln_debt_long ln_debt_sum ln_m_NI ln_m_OIBD ln_PPE ln_m_r_d_aftrtax ln_m_Revenue ln_m_CapEx ln_m_staff ln_m_exe_comp ln_m_Pension { 
@@ -249,6 +254,8 @@ bys id: replace IF_NI2= IF_NI2[_n-1]+1 if NI_loss_freq >= 1
 xtreg ln_m_NI i.IF_NI_100, fe vce(clu gics)
 est store fe_impact
 
+**test (1.ln_m_NI#0.b_ratio =1.ln_m_NI#1.b_ratio)
+
 xtreg ln_m_NI i.IF_NI_100 if b_ratio ==1, fe vce(clu id)
 est store fe_high
 coefplot, keep(*.IF_NI_100) xline( 0 ) ylabel(0(10)140, grid angle(0)) xtitle("Net Income with 4 quater-moving average logarithm", size(small)) ytitle("time 100 of 0 for the last loss", size(small)) title("Above average group") 
@@ -285,6 +292,52 @@ tabstat ln_m_OIBD ratio parity ln_asset ln_equity ln_debt_sum DtoE ln_cash acid_
 pwcorr OIBD ratio parity asset equity debt_sum DtoE cash acid_r CapEx capex_r staff labor_r PPE PPE_r NI Revenue Employees exe_comp Pension avg_staff avg_exe cpi_q-r_gdp, star(0.01)
 *insufficient observations depending on certain time periods.
 *install pwcorrf, xtcdf, xtqptest, xthrtest, xtistest, xtmg, xtscc.
+
+*regression for time-dummies
+xtreg ln_m_OIBD ratio i.time, fe vce(cluster gics)
+est store fe_t1
+coefplot, keep(*.time) xline( 0 ) ylabel(0(8)100, grid angle(0)) xtitle("wage disparity", size(small)) ytitle("time", size(small)) title("year-dummies on the wage disparity in the FE model") 
+graph save fe_t1, replace
+
+reg ln_m_OIBD ratio sq_ratio parity DtoE ln_assets ln_equity acid_r capex_r labor_r PPE_r Employees /// 
+    ln_m_exe_comp ln_m_Pension avg_staff avg_exe i.time, cluster(id)
+est store pols_t
+
+xtreg ln_m_OIBD ratio sq_ratio parity DtoE ln_assets ln_equity acid_r capex_r labor_r PPE_r Employees /// 
+    ln_m_exe_comp ln_m_Pension avg_staff avg_exe i.time, re vce(cluster gics)
+est store re_t
+
+xtreg ln_m_OIBD ratio sq_ratio parity DtoE ln_assets ln_equity acid_r capex_r labor_r PPE_r Employees /// 
+    ln_m_exe_comp ln_m_Pension avg_staff avg_exe i.time, fe vce(cluster gics)
+est store fe_t
+
+*impossible to FEIS_time dummy 
+
+xtreg OIBD_per_se ratio sq_ratio parity DtoE ln_assets ln_equity acid_r capex_r labor_r PPE_r Employees /// 
+    ln_m_exe_comp ln_m_Pension avg_staff avg_exe i.time, fe vce(cluster gics)
+est store fe_ps_t
+
+xtreg lg_OIBD ratio sq_ratio parity DtoE ln_assets ln_equity acid_r capex_r labor_r PPE_r Employees /// 
+    ln_m_exe_comp ln_m_Pension avg_staff avg_exe i.time, re vce(cluster gics)
+est store re_lag_t
+
+xtreg yr2_OIBD ratio sq_ratio parity DtoE ln_assets ln_equity acid_r capex_r labor_r PPE_r Employees /// 
+    ln_m_exe_comp ln_m_Pension avg_staff avg_exe i.time, re vce(cluster gics)
+est store re_2yr_t
+
+xtreg lg_OIBD ratio sq_ratio parity DtoE ln_assets ln_equity acid_r capex_r labor_r PPE_r Employees /// 
+   ln_m_exe_comp ln_m_Pension avg_staff avg_exe i.time, fe vce(cluster gics)
+est store fe_lag_t
+
+xtreg yr2_OIBD ratio sq_ratio parity DtoE ln_assets ln_equity acid_r capex_r labor_r PPE_r Employees ///
+   ln_m_exe_comp ln_m_Pension avg_staff avg_exe i.time, fe vce(cluster gics)
+est store fe_2yr_t
+
+est tab pols_t re_t fe_t fe_ps_t re_lag_t re_2yr_t fe_lag_t fe_2yr_t, star stats(N r2)
+est tab pols_t re_t fe_t fe_ps_t re_lag_t re_2yr_t fe_lag_t fe_2yr_t, b se
+
+esttab pols_t re_t fe_t fe_ps_t re_lag_t re_2yr_t fe_lag_t fe_2yr_t using timedummy.rtf, label replace
+esttab pols_t re_t fe_t fe_ps_t re_lag_t re_2yr_t fe_lag_t fe_2yr_t using timedummy.csv, label replace
 
 
 *regression for H1
@@ -336,7 +389,7 @@ xtreg ln_m_OIBD ratio sq_ratio parity DtoE ln_assets ln_equity acid_r capex_r la
 predict n_re
 est store n_re
 
-hausman n_re n_fe, sigmamore //  The RE model is rejected: chi2<0 fails to meet the asymptotic assumptions of the Hausman test ==>vce(cluster)
+hausman n_re n_fe, sigmamore //chi-square(13)=-372.21   The RE model is rejected: chi2<0 fails to meet the asymptotic assumptions of the Hausman test ==>vce(cluster)
 
 *GMM- DV: ln_m_OIBD, lg_OIBD, yr2_OIBD, d_OIBD
 *misschk ratio
@@ -366,53 +419,71 @@ est store gmm_d
 estat overid
 
 *not possible with OIBD_per_se: not concave
+*gmm (d_OIBD - exp({xb:d_ratio d_ln_assets Employees ch_staff d_capex_r}+{b0})), instruments(d_ln_assets d_ln_equity d_DtoE d_ln_debt_current d_ln_PPE d_ln_m_CapEx d_ln_cash Employees d_ln_m_staff d_ln_m_exe_comp d_ln_m_Pension) nolog vce(cluster id)
 
 est tab gmm_empty gmm_e gmm_n gmm_lg gmm_lg2 gmm_d, star stats(N r2)
 est tab gmm_empty gmm_e gmm_n gmm_lg gmm_lg2 gmm_d, b se
 
-*regression for time-dummies
-xtreg ln_m_OIBD ratio i.time, fe vce(cluster gics)
-est store fe_t1
-coefplot, keep(*.time) xline( 0 ) ylabel(0(8)100, grid angle(0)) xtitle("wage disparity", size(small)) ytitle("time", size(small)) title("year-dummies on the wage disparity in the FE model") 
-graph save fe_t1, replace
+**xtabond2 ln_m_OIBD l.ln_m_OIBD l(0/1).(ln_assets ratio) time, gmm(l.ln_m_OIBD ln_assets ratio) iv(time, passthru) noleveleq small
+cd "${WORK_PATH}"
 
-reg ln_m_OIBD ratio sq_ratio parity DtoE ln_assets ln_equity acid_r capex_r labor_r PPE_r Employees /// 
-    ln_m_exe_comp ln_m_Pension avg_staff avg_exe i.time, cluster(id)
-est store pols_t
 
-xtreg ln_m_OIBD ratio sq_ratio parity DtoE ln_assets ln_equity acid_r capex_r labor_r PPE_r Employees /// 
-    ln_m_exe_comp ln_m_Pension avg_staff avg_exe i.time, re vce(cluster gics)
-est store re_t
+*make one id of the treated for synthetic control
+bys id: gen s_ratio = 0 
+bys id: replace s_ratio = 1 if ratio > 2.957
+save wagegap.dta, replace
+*average ratio = 2.957271 for 1994-1996
 
-xtreg ln_m_OIBD ratio sq_ratio parity DtoE ln_assets ln_equity acid_r capex_r labor_r PPE_r Employees /// 
-    ln_m_exe_comp ln_m_Pension avg_staff avg_exe i.time, fe vce(cluster gics) 
-est store fe_t
+collapse (sum) OIBD assets equity cash debt_current debt_long debt_sum CapEx PPE staff Employees NI Revenue exe_comp exe_nr Pension (median) cpi_q if s_ratio==0, by(time)
+gen id=0
+*moving average of periodic performances in four quarters
+foreach y in NI OIBD Revenue CapEx staff exe_comp Pension {
+  bys id : gen L1_`y'=`y'[_n-1]
+  bys id : gen L2_`y'=`y'[_n-2]
+  bys id : gen L3_`y'=`y'[_n-3]
+  egen m_`y' = rowmean(`y' L1_`y' L2_`y' L3_`y')
+  	}	
+*deflated by price level and natural logarithm of dollar amount variables
+foreach x in assets equity cash debt_current debt_long debt_sum m_NI m_OIBD PPE m_Revenue m_CapEx m_staff m_exe_comp m_Pension { 
+	gen ln_`x'=ln(`x'/(1+cpi_q))
+	}
 
-*impossible to FEIS_time dummy 
+* differencing in natural logarithm and in ratios
+foreach x in ln_assets ln_equity ln_cash ln_debt_current ln_debt_long ln_debt_sum ln_m_NI ln_m_OIBD ln_PPE ln_m_Revenue ln_m_CapEx ln_m_staff ln_m_exe_comp ln_m_Pension { 
+	bys id: gen lg_`x' = `x'[_n+1]
+	bys id: gen d_`x' = `x'- lg_`x' 
+	}	
+bys id : gen lg_OIBD = ln_m_OIBD[_n+4]
+bys id : gen d_OIBD = ln_m_OIBD - ln_m_OIBD[_n-1]
+egen yr2_OIBD = rowmean(ln_m_OIBD lg_OIBD)
+gen avg_staff = (m_staff*1000000) / (Employees *1000)
+gen avg_exe = (m_exe_comp*1000) / exe_nr
+gen ratio = ln(avg_exe / avg_staff)
+gen sq_ratio = ratio + ratio
+gen acid_r =  ln_cash - ln_debt_current
+gen capex_r = ln_m_CapEx - ln_assets
+gen DtoE = - ln_debt_sum - ln_equity 
+gen labor_r = ln_m_staff - ln_m_Revenue
+gen pension_r = ln_m_Pension - ln_m_Revenue
+gen PPE_r = ln_PPE - ln_assets
+gen parity = ln((m_exe_comp*1000)/(m_staff*1000000))
 
-xtreg OIBD_per_se ratio sq_ratio parity DtoE ln_assets ln_equity acid_r capex_r labor_r PPE_r Employees /// 
-    ln_m_exe_comp ln_m_Pension avg_staff avg_exe i.time, fe vce(cluster gics)
-est store fe_ps_t
+foreach x in ratio yr2_OIBD DtoE acid_r capex_r labor_r PPE_r avg_staff avg_exe parity { 
+	bys id: gen d_`x' = `x'-`x'[_n-1]
+	}
+save s_treat.dta, replace
 
-xtreg lg_OIBD ratio sq_ratio parity DtoE ln_assets ln_equity acid_r capex_r labor_r PPE_r Employees /// 
-    ln_m_exe_comp ln_m_Pension avg_staff avg_exe i.time, re vce(cluster gics)
-est store re_lag_t
+use wagegap.dta, clear 
+append using s_treat.dta
+save wagegap.dta, replace
 
-xtreg yr2_OIBD ratio sq_ratio parity DtoE ln_assets ln_equity acid_r capex_r labor_r PPE_r Employees /// 
-    ln_m_exe_comp ln_m_Pension avg_staff avg_exe i.time, re vce(cluster gics)
-est store re_2yr_t
+mat c_id = (0)
+tab id if s_ratio==1, nol matcell(c_id)
+mat c_time = (0)
+tab time, nol matcell(c_time)
 
-xtreg lg_OIBD ratio sq_ratio parity DtoE ln_assets ln_equity acid_r capex_r labor_r PPE_r Employees /// 
-   ln_m_exe_comp ln_m_Pension avg_staff avg_exe i.time, fe vce(cluster gics)
-est store fe_lag_t
-
-xtreg yr2_OIBD ratio sq_ratio parity DtoE ln_assets ln_equity acid_r capex_r labor_r PPE_r Employees ///
-   ln_m_exe_comp ln_m_Pension avg_staff avg_exe i.time, fe vce(cluster gics)
-est store fe_2yr_t
-
-est tab pols_t re_t fe_t fe_ps_t re_lag_t re_2yr_t fe_lag_t fe_2yr_t, star stats(N r2)
-est tab pols_t re_t fe_t fe_ps_t re_lag_t re_2yr_t fe_lag_t fe_2yr_t, b se
-
-esttab pols_t re_t fe_t fe_ps_t re_lag_t re_2yr_t fe_lag_t fe_2yr_t using timedummy.rtf, label replace
-esttab pols_t re_t fe_t fe_ps_t re_lag_t re_2yr_t fe_lag_t fe_2yr_t using timedummy.csv, label replace
-
+*ssc install synth / npsynth
+synth m_OIBD ratio, trunit(0) counit(29 85 145 230 437 614)) trperiod(13695) fig nested
+*no panel attrition id: 29	85	145	199	230	236	293	315	331	333	338	344	364	436	437	614	687	824	866	1038 1132 1234 1328
+*no panel attrition id(below avg) : 199 236 293 315 331 333 338 344 364 364 436 687 824 866 1038 1132 1234 1328
+npsynth ln_m_OIBD ratio, trunit(0) counit(29 85 145 230 437 614)) trperiod(13695) fig nested
